@@ -27,3 +27,4 @@ out
 *.sw?
 
 .env.local
+.next
