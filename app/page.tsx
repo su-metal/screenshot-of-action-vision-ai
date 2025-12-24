@@ -1,12 +1,12 @@
+'use client';
 
-import React, { useState, useCallback, useRef } from 'react';
-import { AppState, PredictionResult } from './types';
-import { analyzeImageAction } from './services/geminiService';
-import { fileToBase64 } from './utils/helpers';
-import { Button } from './components/Button';
-import { ResultCard } from './components/ResultCard';
+import { ChangeEvent, useRef, useState } from 'react';
+import { AppState } from '../types';
+import { fileToBase64 } from '../utils/helpers';
+import { Button } from '../components/Button';
+import { ResultCard } from '../components/ResultCard';
 
-const App: React.FC = () => {
+const HomePage = () => {
   const [state, setState] = useState<AppState>({
     image: null,
     loading: false,
@@ -16,7 +16,7 @@ const App: React.FC = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -33,14 +33,27 @@ const App: React.FC = () => {
 
     setState(prev => ({ ...prev, loading: true, error: null }));
     try {
-      const result = await analyzeImageAction(state.image);
+      const response = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ base64Image: state.image })
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || '分析に失敗しました。再度お試しください。');
+      }
+
+      const result = await response.json();
       setState(prev => ({ ...prev, loading: false, result }));
     } catch (err: any) {
       console.error(err);
-      setState(prev => ({ 
-        ...prev, 
-        loading: false, 
-        error: '分析に失敗しました。再度お試しください。' 
+      setState(prev => ({
+        ...prev,
+        loading: false,
+        error: err instanceof Error ? err.message : '分析に失敗しました。再度お試しください。'
       }));
     }
   };
@@ -57,7 +70,6 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center py-12 px-4 sm:px-6 lg:px-8">
-      {/* Header */}
       <div className="max-w-4xl w-full text-center mb-12">
         <div className="inline-block p-2 bg-indigo-50 rounded-2xl mb-4">
           <div className="bg-indigo-600 p-3 rounded-xl shadow-lg shadow-indigo-200">
@@ -75,7 +87,6 @@ const App: React.FC = () => {
         </p>
       </div>
 
-      {/* Main Content */}
       <div className="max-w-4xl w-full space-y-8">
         {!state.image ? (
           <div 
@@ -153,12 +164,11 @@ const App: React.FC = () => {
         {state.result && <ResultCard result={state.result} />}
       </div>
 
-      {/* Footer */}
       <footer className="mt-auto pt-12 text-gray-400 text-sm">
-        <p>© 2024 Action Vision AI - Built with Gemini Flash 3</p>
+        <p>c 2024 Action Vision AI - Built with Gemini Flash 3</p>
       </footer>
     </div>
   );
 };
 
-export default App;
+export default HomePage;

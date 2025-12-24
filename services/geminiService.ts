@@ -2,10 +2,14 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { PredictionResult } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+const apiKey = process.env.GEMINI_API_KEY;
+if (!apiKey) {
+  throw new Error("GEMINI_API_KEY is not configured.");
+}
+const ai = new GoogleGenAI({ apiKey });
 
 export const analyzeImageAction = async (base64Image: string): Promise<PredictionResult> => {
-  const model = "gemini-3-flash-preview";
+  const model = "gemini-2.5-flash";
   
   const systemInstruction = `
     あなたは高度な画像認識とデータ構造化のエキスパートです。
