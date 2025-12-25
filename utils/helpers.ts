@@ -1,5 +1,6 @@
 
-import { ActionParams, PredictionResult } from "../types";
+import { ActionParams, PredictionResult, ActionCategory } from "../types";
+
 
 const formatDateTime = (iso?: string) => {
   if (!iso) return null;
@@ -61,31 +62,63 @@ export const generateGoogleMapsUrl = (query: string): string => {
 };
 
 export const generateLineShareUrl = (result: PredictionResult): string => {
-  const { title, detail, params } = result;
-  const { calendarStart, calendarEnd, calendarLocation, calendarDetails, url, calendarTitle } = params;
+  const { title, detail, params, category } = result;
+
+  const {
+    calendarStart,
+    calendarEnd,
+    calendarLocation,
+    calendarDetails,
+    url,
+    calendarTitle,
+    mapQuery,
+  } = params as any;
 
   const dateRange = formatDateTimeRange(calendarStart, calendarEnd);
-  
-  let messageText = `【ActionShotで見つけた情報】\n`;
-  messageText += `タイトル: ${calendarTitle || title}\n`;
-  if (dateRange) messageText += `日時: ${dateRange}\n`;
-  if (calendarLocation) messageText += `場所: ${calendarLocation}\n`;
-  messageText += `詳細: ${calendarDetails || detail}\n`;
-  if (url) messageText += `URL: ${url}`;
 
-  // Apply character limit of 800 to prevent HTTP 400 errors
+  const normalizedTitle = (calendarTitle || title || "").trim();
+  const normalizedDetail = (calendarDetails || detail || "").trim();
+  const normalizedPlace = (calendarLocation || "").trim();
+  const normalizedUrl = (url || "").trim();
+
+  // EVENT/PLACE のときだけ、末尾に地図URLを付与する
+  const isEventOrPlace =
+    category === ActionCategory.Event || category === ActionCategory.Place;
+
+  const mapSearchQuery = (String(mapQuery || "").trim() || normalizedPlace).trim();
+  const mapUrl = isEventOrPlace && mapSearchQuery ? generateGoogleMapsUrl(mapSearchQuery) : "";
+
+  // 黄金フォーマット（絵文字）
+  const lines: string[] = [];
+  if (normalizedTitle) lines.push(`📌 ${normalizedTitle}`);
+  if (dateRange) lines.push(`🗓️ ${dateRange}`);
+  if (normalizedPlace) lines.push(`📍 ${normalizedPlace}`);
+  if (normalizedDetail) lines.push(`📝 ${normalizedDetail}`);
+  if (normalizedUrl) lines.push(`🔗 ${normalizedUrl}`);
+
+  // 一旦本文を作る（地図URLは最後に付与）
+  let body = lines.join("\n").trim();
+
+  // 末尾に地図URL（EVENT/PLACE 時のみ）
+  const tail = mapUrl ? `\n🗺️ ${mapUrl}` : "";
+
+  // 800文字制限：tail（地図URL）を優先して残す
   const LIMIT = 800;
-  if (messageText.length > LIMIT) {
-    messageText = messageText.substring(0, LIMIT - 3) + "...";
+  const reserved = tail.length;
+  const availableForBody = Math.max(0, LIMIT - reserved);
+
+  if (body.length > availableForBody) {
+    // 本文だけ切る（…を付ける）
+    const ellipsis = "...";
+    const cut = Math.max(0, availableForBody - ellipsis.length);
+    body = body.substring(0, cut) + ellipsis;
   }
-  
-  const finalUrl = `https://social-plugins.line.me/lineit/share?text=${encodeURIComponent(messageText.trim())}`;
-  
-  // Logging for development/debugging
-  console.log("Generated LINE URL:", finalUrl);
-  
+
+  const messageText = (body + tail).trim();
+  const finalUrl = `https://social-plugins.line.me/lineit/share?text=${encodeURIComponent(messageText)}`;
   return finalUrl;
 };
+
 
 export const fileToBase64 = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {

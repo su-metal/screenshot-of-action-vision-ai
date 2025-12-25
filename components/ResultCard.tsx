@@ -182,18 +182,23 @@ export const ResultCard: React.FC<ResultCardProps> = ({ result }) => {
     const { category, params } = editable;
     const actions: React.ReactNode[] = [];
 
+    // Google Calendar
     if (category === ActionCategory.Event && (params.calendarTitle || params.calendarStart)) {
       actions.push(
         <Button
           key="cal"
           onClick={() => window.open(generateGoogleCalendarUrl(params), '_blank', 'noopener,noreferrer')}
-          className="w-full sm:w-auto"
+          className="w-full sm:w-auto bg-[#4285F4] hover:bg-[#2b6de0] text-white border-none shadow-sm"
         >
+          <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M7 2a1 1 0 0 1 1 1v1h8V3a1 1 0 1 1 2 0v1h1.5A2.5 2.5 0 0 1 22 6.5v13A2.5 2.5 0 0 1 19.5 22h-15A2.5 2.5 0 0 1 2 19.5v-13A2.5 2.5 0 0 1 4.5 4H6V3a1 1 0 0 1 1-1Zm12.5 8h-15v9.5c0 .276.224.5.5.5h14c.276 0 .5-.224.5-.5V10Zm-14-4a.5.5 0 0 0-.5.5V8h15V6.5a.5.5 0 0 0-.5-.5h-1.5v1a1 1 0 1 1-2 0V6H8v1a1 1 0 1 1-2 0V6H4.5Z" />
+          </svg>
           カレンダーに追加
         </Button>
       );
     }
 
+    // Google Maps（カテゴリ問わず、場所があれば表示にしたい場合は mapSearchQuery を使う実装にしている前提）
     const mapSearchQuery =
       (params.mapQuery && String(params.mapQuery).trim()) ||
       (params.calendarLocation && String(params.calendarLocation).trim()) ||
@@ -204,27 +209,33 @@ export const ResultCard: React.FC<ResultCardProps> = ({ result }) => {
         <Button
           key="map"
           onClick={() => window.open(generateGoogleMapsUrl(mapSearchQuery), '_blank', 'noopener,noreferrer')}
-          className="w-full sm:w-auto"
+          className="w-full sm:w-auto bg-[#34A853] hover:bg-[#2d8f46] text-white border-none shadow-sm"
         >
+          <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12 2c3.866 0 7 3.134 7 7 0 4.2-4.4 10.2-6.2 12.5a1 1 0 0 1-1.6 0C9.4 19.2 5 13.2 5 9c0-3.866 3.134-7 7-7Zm0 9.5A2.5 2.5 0 1 0 12 6.5a2.5 2.5 0 0 0 0 5Z" />
+          </svg>
           マップで確認
         </Button>
       );
     }
 
-
+    // Web Search（Googleっぽい “白＋青枠”）
     if (params.searchQuery) {
       actions.push(
         <Button
           key="search"
-          variant="outline"
           onClick={() => window.open(generateGoogleSearchUrl(params.searchQuery!), '_blank', 'noopener,noreferrer')}
-          className="w-full sm:w-auto"
+          className="w-full sm:w-auto bg-white hover:bg-gray-50 text-[#4285F4] border border-[#4285F4] shadow-sm"
         >
+          <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M10.5 3a7.5 7.5 0 1 1 4.7 13.35l3.72 3.72a1 1 0 0 1-1.42 1.42l-3.72-3.72A7.5 7.5 0 0 1 10.5 3Zm0 2a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11Z" />
+          </svg>
           Webで検索
         </Button>
       );
     }
 
+    // LINE（現状のままでOK：緑＋吹き出しSVG）
     actions.push(
       <Button
         key="line"
@@ -234,26 +245,29 @@ export const ResultCard: React.FC<ResultCardProps> = ({ result }) => {
         }}
         className="w-full sm:w-auto bg-[#06C755] hover:bg-[#05b34c] text-white border-none shadow-sm"
       >
-        <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
           <path d="M24 10.304c0-4.579-5.383-8.304-12-8.304s-12 3.725-12 8.304c0 4.105 4.27 7.541 10.048 8.177.391.084.924.258 1.058.594.121.303.079.778.039 1.085l-.171 1.027c-.052.303-.242 1.186 1.039.647 1.281-.54 6.911-4.069 9.428-6.967 1.739-1.907 2.559-3.478 2.559-4.566z" />
         </svg>
         LINEで共有
       </Button>
     );
 
+    // Open URL（控えめ＋外部リンク）
     if (params.url) {
       actions.push(
         <Button
           key="url"
-          variant="ghost"
-          onClick={() => window.open(params.url!, '_blank', 'noopener,noreferrer')}
-          className="w-full sm:w-auto"
+          onClick={() => window.open(params.url, '_blank', 'noopener,noreferrer')}
+          className="w-full sm:w-auto bg-transparent hover:bg-gray-50 text-gray-700 border border-gray-200 shadow-sm"
         >
+          <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M14 3a1 1 0 1 0 0 2h3.586L10.293 12.293a1 1 0 1 0 1.414 1.414L19 6.414V10a1 1 0 1 0 2 0V3h-7Z" />
+            <path d="M5 5a2 2 0 0 1 2-2h4a1 1 0 1 1 0 2H7v12h12v-4a1 1 0 1 1 2 0v4a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5Z" />
+          </svg>
           リンクを開く
         </Button>
       );
     }
-
     return actions.length > 0 ? <div className="flex flex-wrap gap-3 mt-6">{actions}</div> : null;
   };
 
