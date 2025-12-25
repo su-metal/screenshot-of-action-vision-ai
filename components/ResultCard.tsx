@@ -25,13 +25,6 @@ const LABELS: Record<string, string> = {
   url: '関連URL',
 };
 
-const PLACEHOLDERS: Record<string, string> = {
-  calendarTitle: '例：高校小学校 マラソン大会',
-  calendarLocation: '場所名や住所',
-  mapQuery: '例：高校小学校',
-  searchQuery: '例：高校小学校 マラソン大会 2025',
-  url: 'https://...',
-};
 
 const isISODateTime = (v: unknown) => {
   if (typeof v !== 'string') return false;
@@ -113,8 +106,14 @@ export const ResultCard: React.FC<ResultCardProps> = ({ result }) => {
       return ['calendarTitle', 'calendarLocation', 'mapQuery', 'searchQuery', 'url'] as (keyof Params)[];
     }
 
-    // Product / Task は基本「タイトル + 詳細 + search/url」寄り
+    // Product は「検索 + URL」だけ（商品名/説明/補足で十分）
+    if (editable.category === ActionCategory.Product) {
+      return ['searchQuery', 'url'] as (keyof Params)[];
+    }
+
+    // Task は従来通り（必要なら開始日時もここに後で足せる）
     return ['calendarTitle', 'calendarDetails', 'searchQuery', 'url'] as (keyof Params)[];
+
   }, [editable.category, editable.params]);
 
   const renderField = (key: keyof Params) => {
@@ -124,7 +123,6 @@ export const ResultCard: React.FC<ResultCardProps> = ({ result }) => {
     if (value === null || value === undefined) return null;
 
     const label = LABELS[String(key)] ?? String(key);
-    const placeholder = PLACEHOLDERS[String(key)] ?? '';
 
     const commonInput =
       'w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-900 outline-none ' +
@@ -156,7 +154,6 @@ export const ResultCard: React.FC<ResultCardProps> = ({ result }) => {
           <textarea
             className={commonInput + ' min-h-[110px] resize-y'}
             value={String(value ?? '')}
-            placeholder={placeholder}
             onChange={(e) => setParam(key, e.target.value)}
           />
         </div>
@@ -171,7 +168,6 @@ export const ResultCard: React.FC<ResultCardProps> = ({ result }) => {
           type="text"
           className={commonInput}
           value={String(value ?? '')}
-          placeholder={placeholder}
           onChange={(e) => setParam(key, e.target.value)}
         />
       </div>
@@ -272,6 +268,9 @@ export const ResultCard: React.FC<ResultCardProps> = ({ result }) => {
 
   // “スクショ1のフォーム感”を出すため、title/detail は上部カードっぽく
   const topTitleLabel = editable.category === ActionCategory.Product ? '商品名' : 'イベント名';
+  const aiNotes = (editable as any).aiNotes as string | undefined;
+  const showAiNotes = editable.category === ActionCategory.Product;
+
 
   return (
     <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -310,6 +309,16 @@ export const ResultCard: React.FC<ResultCardProps> = ({ result }) => {
               onChange={(e) => setEditable((prev) => ({ ...prev, detail: e.target.value }))}
             />
           </div>
+          {showAiNotes && (
+            <div className="px-4 sm:px-5 pb-5">
+              <div className="text-sm font-semibold text-gray-700 mb-2">補足（AI）</div>
+              <textarea
+                className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-900 outline-none focus:bg-white focus:border-gray-300 focus:ring-4 focus:ring-black/5 transition min-h-[90px] resize-y"
+                value={aiNotes ?? ''}
+                onChange={(e) => setEditable((prev) => ({ ...(prev as any), aiNotes: e.target.value }))}
+              />
+            </div>
+          )}
         </div>
 
         {renderActions()}
