@@ -181,7 +181,7 @@ export const ResultCard: React.FC<ResultCardProps> = ({ result }) => {
     // Google Calendar
     if ((category === ActionCategory.Event || category === ActionCategory.Task) && (params.calendarTitle || params.calendarStart)) {
       actions.push(
-        <Button
+        <Button variant="gcal"
           key="cal"
           onClick={() => window.open(generateGoogleCalendarUrl(params), '_blank', 'noopener,noreferrer')}
           className="w-full sm:w-auto bg-[#4285F4] hover:bg-[#2b6de0] text-white border-none shadow-sm"
@@ -202,7 +202,7 @@ export const ResultCard: React.FC<ResultCardProps> = ({ result }) => {
 
     if (mapSearchQuery) {
       actions.push(
-        <Button
+        <Button variant="gmap"
           key="map"
           onClick={() => window.open(generateGoogleMapsUrl(mapSearchQuery), '_blank', 'noopener,noreferrer')}
           className="w-full sm:w-auto bg-[#34A853] hover:bg-[#2d8f46] text-white border-none shadow-sm"
@@ -218,7 +218,7 @@ export const ResultCard: React.FC<ResultCardProps> = ({ result }) => {
     // Web Search（Googleっぽい “白＋青枠”）
     if (params.searchQuery) {
       actions.push(
-        <Button
+        <Button variant="search"
           key="search"
           onClick={() => window.open(generateGoogleSearchUrl(params.searchQuery!), '_blank', 'noopener,noreferrer')}
           className="w-full sm:w-auto bg-white hover:bg-gray-50 text-[#4285F4] border border-[#4285F4] shadow-sm"
@@ -250,7 +250,7 @@ export const ResultCard: React.FC<ResultCardProps> = ({ result }) => {
     // Open URL（控えめ＋外部リンク）
     if (params.url) {
       actions.push(
-        <Button
+        <Button variant="link"
           key="url"
           onClick={() => window.open(params.url, '_blank', 'noopener,noreferrer')}
           className="w-full sm:w-auto bg-gray-50 hover:bg-gray-100 text-gray-800 border border-gray-200 shadow-sm"
