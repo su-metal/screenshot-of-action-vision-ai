@@ -1,9 +1,9 @@
-
 export enum ActionCategory {
-  Event = 'Event',
-  Product = 'Product',
-  Task = 'Task',
-  Place = 'Place'
+  Event = "Event",
+  Product = "Product",
+  Task = "Task",
+  Place = "Place",
+  News = "News",
 }
 
 export interface ActionParams {

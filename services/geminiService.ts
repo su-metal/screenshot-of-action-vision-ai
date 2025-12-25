@@ -27,13 +27,23 @@ export const analyzeImageAction = async (
 2) イベント告知（セミナー/予約/会議/学校予定）: Event
 3) 店舗・場所（Google Maps/住所/行きたい店）: Place
 4) 商品比較・購入検討（EC/スペック/価格）: Product
-5) チャット依頼（返信が必要、やることが明確）: Task
+5) ニュース記事・報道・告知文（出来事の説明が主）: News
+6) チャット依頼（返信が必要、やることが明確）: Task
 
 カテゴリ定義（厳密に選ぶ）
 - Event: 日時が確定していて「予定としてカレンダー登録」するのが自然なもの
 - Task: 締切・返信・提出・判断・確認など「やるべきTODO」。期限があればcalendarStartに入れる
 - Place: 住所/店名/施設名など「行く場所」が主役。mapQueryに入れる
 - Product: 商品名/型番/ブランド/比較が主役。searchQueryに入れる
+- News: ニュース記事・報道・告知など「出来事の説明」が主で、特定の商品購入・場所訪問・期限タスクが主役ではないもの
+  - News の場合、Product/Place/Task に無理やり寄せない（擬似的な商品名や価格扱いを作らない）
+
+  NEWSの記述ルール
+- title: 記事の見出しを短く要約（1行）
+- detail: 何が起きたかを2〜3文で要約（事実ベース）
+- params.searchQuery: 主要キーワード（固有名詞 + 要点語）
+- params.url: 画像にURLが明確にある場合のみ
+- aiNotes: 追加の背景説明は可。ただし推測は断定しない。不要なら ""。
 
 paramsの作り方（必須ルール）
 - url: 画像内にURLがある場合は最優先で入れる（見つからなければ ""）
@@ -99,7 +109,9 @@ PRODUCTのcalendarDetails出力フォーマット（UIにそのまま入れる�
     properties: {
       category: {
         type: Type.STRING,
-        description: "The category of the action (Event, Product, Task, Place)",
+        description:
+          "The category of the action (Event, Product, Task, Place, News)",
+        enum: ["Event", "Product", "Task", "Place", "News"],
       },
       title: {
         type: Type.STRING,
