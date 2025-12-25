@@ -27,4 +27,6 @@ out
 *.sw?
 
 .env.local
-.next
+# Next.js build output
+.next/
+out/
