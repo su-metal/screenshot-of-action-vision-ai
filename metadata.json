@@ -1,0 +1,7 @@
+{
+  "name": "　Base of Action Vision AI",
+  "description": "An advanced image recognition assistant that analyzes screenshots to predict and automate your next logical steps, from scheduling events to finding products.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
