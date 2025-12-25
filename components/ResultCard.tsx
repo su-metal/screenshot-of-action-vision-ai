@@ -47,6 +47,8 @@ const fromDateTimeLocal = (v: string) => {
   return v.length === 16 ? `${v}:00` : v;
 };
 
+
+
 // aiNotes から固定フォーマットのヒントを拾う
 // 期待する形式（例）:
 // date_no_year: 12/04
@@ -72,58 +74,173 @@ const toISOFromNoYearHint = (year: number, mmdd: string, hhmm?: string) => {
   return `${year}-${month}-${day}T${time}:00`;
 };
 
-// result を editable に入れる前に「今年で補完」する
+// テキストから「10:00～16:00」系の時間範囲を拾う
+const pickTimeRange = (text: string) => {
+  // 10:00～16:00 / 10:00-16:00 / 10:00〜16:00 / 10:00ー16:00
+  const m = text.match(/(\d{1,2}:\d{2})\s*[～〜\-ー]\s*(\d{1,2}:\d{2})/);
+  if (!m) return null;
+  const start = m[1].padStart(5, '0');
+  const end = m[2].padStart(5, '0');
+  return { start, end };
+};
+
+// テキストから「明示の年月日」を拾う（推測ではなく根拠のある年だけ）
+// 例: 2017年10月22日 / 2017/10/22 / 2017-10-22 / 2017.10.22
+const pickExplicitYMD = (text: string) => {
+  const m = text.match(/((?:19|20)\d{2})\s*(?:年|[\/\-\.])\s*(\d{1,2})\s*(?:月|[\/\-\.])\s*(\d{1,2})\s*(?:日)?/);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mm = String(Number(m[2])).padStart(2, '0');
+  const dd = String(Number(m[3])).padStart(2, '0');
+  return { y, mm, dd, ymd: `${y}-${mm}-${dd}` };
+};
+
+// ISOの「日付部分だけ」を差し替える（時間は維持）
+// iso が空なら date + fallbackTime で組み立てる
+const replaceIsoDatePart = (iso: string, ymd: string, fallbackTime?: string) => {
+  if (iso && /^\d{4}-\d{2}-\d{2}T/.test(iso)) {
+    return iso.replace(/^\d{4}-\d{2}-\d{2}/, ymd);
+  }
+  const t = (fallbackTime && /^\d{2}:\d{2}$/.test(fallbackTime)) ? fallbackTime : '09:00';
+  return `${ymd}T${t}:00`;
+};
+
+// calendarEnd が空の時だけ、start の日付 + 範囲の end 時刻で補完する
+const ensureEndFromRange = (startIso: string, endIso: string, sourceText: string) => {
+  if (!startIso || endIso) return endIso;
+
+  const tr = pickTimeRange(sourceText);
+  if (!tr) return endIso;
+
+  const m = startIso.match(/^(\d{4}-\d{2}-\d{2})T/);
+  if (!m) return endIso;
+
+  return `${m[1]}T${tr.end}:00`;
+};
+
+
+const shiftISOYear = (iso: string, deltaYears: number) => {
+  if (!iso) return '';
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2})(:\d{2})?$/);
+  if (!m) return iso;
+  const y = Number(m[1]) + deltaYears;
+  const mm = m[2];
+  const dd = m[3];
+  const hhmm = m[4];
+  const ss = m[5] ?? ':00';
+  return `${y}-${mm}-${dd}T${hhmm}${ss}`;
+};
+
+
+// result を editable に入れる前に「今年で補完」する（自動で翌年には繰上げない）
+// ただし date_no_year がある場合は、AIが推測で入れた年を上書きして「今年」に寄せる
+const hasExplicitYear = (text: string) => {
+  if (!text) return false;
+  // 2017年 / 2017/10/22 / 2017-10-22 などを拾う
+  return /(?:\b\d{4}\b\s*年)|(?:\b\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2}\b)/.test(text);
+};
+
+// result を editable に入れる前に補正する
+// 優先順位:
+// 1) テキスト中に明示の年月日（例: 2017年10月22日）があれば、それを最優先（推測禁止）
+// 2) 明示年が無く、aiNotes に date_no_year があれば「今年」で補完（従来仕様）
+// 3) calendarEnd が空なら、時間範囲（10:00～16:00 等）から end を補完
 const applyYearFallbackFromAiNotes = (r: PredictionResult): PredictionResult => {
   const aiNotes = (r as any).aiNotes as string | undefined;
-  if (!aiNotes || typeof aiNotes !== 'string') return r;
-
   const p = r.params ?? ({} as any);
 
-  // すでに calendarStart が入っているなら尊重（上書きしない）
-  if (p.calendarStart && String(p.calendarStart).trim()) return r;
+  // 終了補完や “明示年” 検出用のソース
+  const joined = [
+    r.title ?? '',
+    (r as any).detail ?? '',
+    String(p.calendarDetails ?? ''),
+    String(aiNotes ?? ''),
+  ].filter((s) => typeof s === 'string' && s.trim()).join('\n');
 
-  const dateNoYear = pickHint(aiNotes, 'date_no_year');
-  if (!dateNoYear) return r;
+  // 1) 明示の年月日があれば、それを最優先
+  const explicit = pickExplicitYMD(joined);
 
-  const time = pickHint(aiNotes, 'time');
-  const endDateNoYear = pickHint(aiNotes, 'end_date_no_year');
-  const endTime = pickHint(aiNotes, 'end_time');
+  let nextStart = String(p.calendarStart ?? '');
+  let nextEnd = String(p.calendarEnd ?? '');
 
-  const now = new Date();
-  const baseYear = now.getFullYear();
+  if (explicit) {
+    const tr = pickTimeRange(joined);
+    const timeHint = aiNotes ? pickHint(aiNotes, 'time') : '';
+    const endTimeHint = aiNotes ? pickHint(aiNotes, 'end_time') : '';
 
-  // date_no_year を今年に当てはめた日付が「今日より前」なら翌年
-  let year = baseYear;
-  const m = dateNoYear.match(/^(\d{1,2})[\/\-](\d{1,2})$/);
-  if (m) {
-    const month = Number(m[1]);
-    const day = Number(m[2]);
+    // start: 既存の時刻を保持。無ければ範囲start→aiNotes time→09:00
+    nextStart = replaceIsoDatePart(nextStart, explicit.ymd, tr?.start || timeHint || '09:00');
 
-    const today = new Date(baseYear, now.getMonth(), now.getDate(), 0, 0, 0, 0);
-    const candidate = new Date(baseYear, month - 1, day, 0, 0, 0, 0);
+    // end: 既にあれば日付だけ揃える。無ければ範囲end→aiNotes end_time
+    if (nextEnd) {
+      nextEnd = replaceIsoDatePart(nextEnd, explicit.ymd, tr?.end || endTimeHint);
+    } else {
+      const endTime = tr?.end || endTimeHint;
+      if (endTime && /^\d{2}:\d{2}$/.test(endTime)) {
+        nextEnd = `${explicit.ymd}T${endTime}:00`;
+      }
+    }
 
-    if (candidate.getTime() < today.getTime()) {
-      year = baseYear + 1;
+    // 明示年ケースでも、calendarEnd がまだ空なら「時間範囲」から最後に補完
+    const fixedEnd = ensureEndFromRange(nextStart, nextEnd, joined);
+
+    return {
+      ...r,
+      params: {
+        ...p,
+        calendarStart: nextStart || p.calendarStart || '',
+        calendarEnd: fixedEnd || nextEnd || p.calendarEnd || '',
+      },
+    };
+  }
+
+  // 2) 明示年が無い場合のみ、従来の date_no_year → 今年補完
+  if (aiNotes && typeof aiNotes === 'string') {
+    const dateNoYear = pickHint(aiNotes, 'date_no_year');
+
+    if (dateNoYear) {
+      const time = pickHint(aiNotes, 'time');
+      const endDateNoYear = pickHint(aiNotes, 'end_date_no_year');
+      const endTime = pickHint(aiNotes, 'end_time');
+
+      const year = new Date().getFullYear();
+
+      const calendarStart = toISOFromNoYearHint(year, dateNoYear, time);
+      const calendarEnd = endDateNoYear
+        ? toISOFromNoYearHint(year, endDateNoYear, endTime)
+        : (p.calendarEnd ?? '');
+
+      const fixedEnd = ensureEndFromRange(
+        String(calendarStart || p.calendarStart || ''),
+        String(calendarEnd || p.calendarEnd || ''),
+        joined
+      );
+
+      return {
+        ...r,
+        params: {
+          ...p,
+          calendarStart: calendarStart || p.calendarStart || '',
+          calendarEnd: fixedEnd || calendarEnd || p.calendarEnd || '',
+        },
+      };
     }
   }
 
-  const calendarStart = toISOFromNoYearHint(year, dateNoYear, time);
-
-  const calendarEnd =
-    (p.calendarEnd && String(p.calendarEnd).trim())
-      ? p.calendarEnd
-      : (endDateNoYear ? toISOFromNoYearHint(year, endDateNoYear, endTime) : p.calendarEnd);
+  // 3) date_no_year も無いけど、calendarEnd が空なら時間範囲から補完だけは試す
+  const fixedEnd = ensureEndFromRange(nextStart, nextEnd, joined);
 
   return {
     ...r,
     params: {
       ...p,
-      calendarStart: calendarStart || p.calendarStart || "",
-      calendarEnd: calendarEnd || p.calendarEnd || "",
+      calendarStart: nextStart || p.calendarStart || '',
+      calendarEnd: fixedEnd || nextEnd || p.calendarEnd || '',
     },
   };
-
 };
+
+
 
 
 export const ResultCard: React.FC<ResultCardProps> = ({ result }) => {
@@ -157,6 +274,11 @@ export const ResultCard: React.FC<ResultCardProps> = ({ result }) => {
         [key]: value,
       },
     }));
+  };
+
+  const getISOYear = (iso: string) => {
+    const m = iso.match(/^(\d{4})-/);
+    return m ? Number(m[1]) : null;
   };
 
   // 「フォームとして出す」順番（スクショ1の並びに寄せる）
@@ -197,6 +319,34 @@ export const ResultCard: React.FC<ResultCardProps> = ({ result }) => {
 
   }, [editable.category, editable.params]);
 
+  // 年なし日付（date_no_year）があり、開始日時が「今日より前」なら “来年に切替” を提案（自動では切替しない）
+  const yearSuggestion = React.useMemo(() => {
+    const aiNotes = (editable as any).aiNotes as string | undefined;
+    if (!aiNotes) return null;
+
+    const dateNoYear = pickHint(aiNotes, 'date_no_year');
+    if (!dateNoYear) return null;
+
+    const start = (editable.params as any)?.calendarStart as string | undefined;
+    if (!start) return null;
+
+    const startDate = new Date(start);
+    if (Number.isNaN(startDate.getTime())) return null;
+
+    const now = new Date();
+    const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+
+    // 今日より前なら「来年へ」
+    if (startDate.getTime() >= today0.getTime()) return null;
+
+    const next = shiftISOYear(start, 1);
+    return {
+      nextISO: next,
+      label: `来年に切替（${next.slice(0, 10).replaceAll('-', '/')}）`,
+    };
+  }, [editable]);
+
+
   const renderField = (key: keyof Params) => {
     const value = (editable.params as any)[key];
 
@@ -214,15 +364,95 @@ export const ResultCard: React.FC<ResultCardProps> = ({ result }) => {
     // datetime系
     if ((key === 'calendarStart' || key === 'calendarEnd') && typeof value === 'string') {
       const dt = isISODateTime(value) ? toDateTimeLocal(value) : value;
+
       return (
         <div key={String(key)} className="flex flex-col">
           <div className={commonLabel}>{label}</div>
+
           <input
             type="datetime-local"
             className={commonInput}
             value={dt || ''}
-            onChange={(e) => setParam(key, fromDateTimeLocal(e.target.value))}
+            onChange={(e) => {
+              const nextIso = fromDateTimeLocal(e.target.value);
+
+              // calendarEnd は従来通り
+              if (key !== 'calendarStart') {
+                setParam(key, nextIso);
+                return;
+              }
+
+              // calendarStart の年が変わったら、calendarEnd も同じ差分だけ追随させる
+              setEditable((prev) => {
+                const prevStart = String((prev.params as any).calendarStart ?? '');
+                const prevYear = getISOYear(prevStart);
+                const nextYear = getISOYear(nextIso);
+
+                let nextEnd = (prev.params as any).calendarEnd;
+
+                if (
+                  prevYear &&
+                  nextYear &&
+                  prevYear !== nextYear &&
+                  typeof nextEnd === 'string' &&
+                  nextEnd
+                ) {
+                  const delta = nextYear - prevYear;
+                  nextEnd = shiftISOYear(nextEnd, delta);
+                }
+
+                return {
+                  ...prev,
+                  params: {
+                    ...prev.params,
+                    calendarStart: nextIso,
+                    calendarEnd: nextEnd,
+                  },
+                };
+              });
+            }}
           />
+
+          {key === 'calendarStart' && yearSuggestion?.nextISO && (
+            <div className="mt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setEditable((prev) => {
+                    const prevStart = String((prev.params as any).calendarStart ?? '');
+                    const prevYear = getISOYear(prevStart);
+                    const nextYear = getISOYear(yearSuggestion.nextISO);
+
+                    let nextEnd = (prev.params as any).calendarEnd;
+
+                    if (
+                      prevYear &&
+                      nextYear &&
+                      prevYear !== nextYear &&
+                      typeof nextEnd === 'string' &&
+                      nextEnd
+                    ) {
+                      const delta = nextYear - prevYear;
+                      nextEnd = shiftISOYear(nextEnd, delta);
+                    }
+
+                    return {
+                      ...prev,
+                      params: {
+                        ...prev.params,
+                        calendarStart: yearSuggestion.nextISO,
+                        calendarEnd: nextEnd,
+                      },
+                    };
+                  });
+                }}
+
+                className="text-sm font-semibold text-gray-700 underline underline-offset-4 hover:text-gray-900"
+              >
+                {yearSuggestion.label}
+              </button>
+            </div>
+          )}
         </div>
       );
     }
