@@ -183,7 +183,7 @@ export const ResultCard: React.FC<ResultCardProps> = ({ result }) => {
     const actions: React.ReactNode[] = [];
 
     // Google Calendar
-    if (category === ActionCategory.Event && (params.calendarTitle || params.calendarStart)) {
+    if ((category === ActionCategory.Event || category === ActionCategory.Task) && (params.calendarTitle || params.calendarStart)) {
       actions.push(
         <Button
           key="cal"
@@ -239,17 +239,16 @@ export const ResultCard: React.FC<ResultCardProps> = ({ result }) => {
     actions.push(
       <Button
         key="line"
+        variant="line"
         onClick={() => {
           const url = generateLineShareUrl(editable);
-          window.open(url, '_blank', 'noopener,noreferrer');
+          window.open(url, "_blank", "noopener,noreferrer");
         }}
-        className="w-full sm:w-auto bg-[#06C755] hover:bg-[#05b34c] text-white border-none shadow-sm"
+        className="w-full sm:w-auto"
       >
-        <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-          <path d="M24 10.304c0-4.579-5.383-8.304-12-8.304s-12 3.725-12 8.304c0 4.105 4.27 7.541 10.048 8.177.391.084.924.258 1.058.594.121.303.079.778.039 1.085l-.171 1.027c-.052.303-.242 1.186 1.039.647 1.281-.54 6.911-4.069 9.428-6.967 1.739-1.907 2.559-3.478 2.559-4.566z" />
-        </svg>
         LINEで共有
       </Button>
+
     );
 
     // Open URL（控えめ＋外部リンク）
@@ -258,7 +257,7 @@ export const ResultCard: React.FC<ResultCardProps> = ({ result }) => {
         <Button
           key="url"
           onClick={() => window.open(params.url, '_blank', 'noopener,noreferrer')}
-          className="w-full sm:w-auto bg-transparent hover:bg-gray-50 text-gray-700 border border-gray-200 shadow-sm"
+          className="w-full sm:w-auto bg-gray-50 hover:bg-gray-100 text-gray-800 border border-gray-200 shadow-sm"
         >
           <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
             <path d="M14 3a1 1 0 1 0 0 2h3.586L10.293 12.293a1 1 0 1 0 1.414 1.414L19 6.414V10a1 1 0 1 0 2 0V3h-7Z" />
