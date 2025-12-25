@@ -1,16 +1,20 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import OpenAI from "openai";
 import { PredictionResult } from "../types";
 
-const apiKey = process.env.GEMINI_API_KEY;
+// NOTE: Gemini -> OpenAI
+const apiKey = process.env.OPENAI_API_KEY;
 if (!apiKey) {
-  throw new Error("GEMINI_API_KEY is not configured.");
+  throw new Error("OPENAI_API_KEY is not configured.");
 }
-const ai = new GoogleGenAI({ apiKey });
+
+const client = new OpenAI({ apiKey });
 
 export const analyzeImageAction = async (
   base64Image: string
 ): Promise<PredictionResult> => {
-  const model = "gemini-2.5-flash";
+  // 画像解析＋JSON厳格出力に向く軽量モデル例（好みで変更OK）
+  // 例: "gpt-4o-mini" / "gpt-5.2-mini" 等
+  const model = "gpt-4.1-mini";
 
   const systemInstruction = `
 あなたは高度な画像認識と情報抽出のエキスパートです。
@@ -30,20 +34,47 @@ export const analyzeImageAction = async (
 5) ニュース記事・報道・告知文（出来事の説明が主）: News
 6) チャット依頼（返信が必要、やることが明確）: Task
 
+主イベントの選定ルール（重要）
+- 画像内に複数の告知・イベント・案内が含まれる場合は、必ず「主となる1件」を選ぶ
+- 主イベントは次の優先順位で判断する
+  1) 最も大きく表示されている見出し・タイトル
+  2) 参加・申込・来場を直接呼びかけている内容
+  3) 説明文の量が最も多い内容
+- 囲み枠、注釈、小さな告知、補足的な案内（例：試験日程、休校案内など）は主イベントにしない
+- 主でない告知は aiNotes に「補足情報」としてまとめてもよい
+
+複数候補の提示（方式A）
+- 画像内にイベント/タスク候補が複数あり、主となる1件が決めにくい、またはユーザーが選びそうな代替候補が明確に存在する場合は、
+  aiNotes に「候補2」としてもう1件だけ提示してよい（最大1件まで）。
+- JSONの category/title/detail/params は必ず「主となる1件」だけを入れる（候補2をparamsに混ぜない）。
+- 候補2は aiNotes 内で、次の固定フォーマットで短く記載する（改行含む）。
+  候補2: {タイトル}
+  日時: {YYYY/MM/DD HH:MM または YYYY/MM/DD（不明なら空）}
+  場所: {場所（不明なら空）}
+- 候補2の日時や場所は、画像から読める場合のみ記載する。推測で補完しない。
+- 画像内に「本番/開催/実施/大会」などがある場合は、それを主イベントとして優先し、他は候補2に回す。
+
+補足日時の明示（簡易ルール）
+- 主イベントとは別に、同一画像内に「大会」「本番」「実施予定」「当日」などの語が付いた別日時が読める場合は、
+  aiNotes にその日時だけを簡潔に記載してよい。
+- aiNotes には事実（日付・時刻）のみを書く。説明文や推測は加えない。
+
 カテゴリ定義（厳密に選ぶ）
 - Event: 日時が確定していて「予定としてカレンダー登録」するのが自然なもの
+  日時・場所・参加案内が揃っており、チラシや告知の主目的となっているもの
 - Task: 締切・返信・提出・判断・確認など「やるべきTODO」。期限があればcalendarStartに入れる
 - Place: 住所/店名/施設名など「行く場所」が主役。mapQueryに入れる
 - Product: 商品名/型番/ブランド/比較が主役。searchQueryに入れる
 - News: ニュース記事・報道・告知など「出来事の説明」が主で、特定の商品購入・場所訪問・期限タスクが主役ではないもの
   - News の場合、Product/Place/Task に無理やり寄せない（擬似的な商品名や価格扱いを作らない）
 
-  NEWSの記述ルール
+NEWSの記述ルール
 - title: 記事の見出しを短く要約（1行）
 - detail: 何が起きたかを2〜3文で要約（事実ベース）
 - params.searchQuery: 主要キーワード（固有名詞 + 要点語）
 - params.url: 画像にURLが明確にある場合のみ
 - aiNotes: 追加の背景説明は可。ただし推測は断定しない。不要なら ""。
+  主イベント以外の関連告知（試験日程・休業日など）は aiNotes に簡潔に記載してよい
 
 paramsの作り方（必須ルール）
 - url: 画像内にURLがある場合は最優先で入れる（見つからなければ ""）
@@ -54,10 +85,65 @@ paramsの作り方（必須ルール）
 - EventのcalendarStart/calendarEnd:
   - 開始が分かるならcalendarStart
   - 終了が分からない場合はcalendarEndは ""（ここでは補完しない）
+
+  期間表現の扱い（Event）
+  - 画像内に「期間」「〜まで」「から〜まで」などの表現がある場合は、それを Event の calendarStart / calendarEnd として出力してよい
+  - 「◯月◯日から◯月◯日まで」と読める場合は、開始日を calendarStart、終了日を calendarEnd に入れる
+  - 曜日表記（例：月・火・水）は無視して日付のみを抽出してよい
+
+  日時フォーマット（UI互換の必須ルール）
+  - calendarStart / calendarEnd は必ず ISO 8601形式で出力する（スラッシュ禁止、T必須）
+  - 形式は次のどちらかに統一する
+    - YYYY-MM-DDTHH:MM:SS+09:00（推奨）
+    - YYYY-MM-DDTHH:MM:SS（タイムゾーン省略も可）
+  - 例: 2025-12-04T09:00:00+09:00 / 2025-11-17T09:00:00
+  - YYYY/MM/DD HH:MM や 12月4日(木) 9:00 のような形式は絶対に出力しない（フォームが空になるため）
+  - 年が不明な日付を、無理にISO化するために年を作ってはいけない。年が無ければ calendarStart/calendarEnd は ""。
+
+
+年の扱い（推測禁止、固定フォーマット）
+
+画像内に年の明示がある場合は、その年をそのまま使用する（過去・未来は問わない）。
+
+画像内に年の明示がない場合は、calendarStart と calendarEnd は必ず "" にする（年を推測して埋めない）。
+
+年の記載が無いが、月日や時刻が読める場合は、aiNotes に次の固定形式で必ず記載する（存在するものだけ、推測は禁止）。
+
+aiNotes の固定形式（厳守）
+
+date_no_year: MM/DD
+
+time: HH:MM（読める場合のみ）
+
+end_date_no_year: MM/DD（終了が読める場合のみ）
+
+end_time: HH:MM（読める場合のみ）
+
+例
+
+date_no_year: 12/04
+time: 09:00
+
+例（期間）
+
+date_no_year: 11/17
+end_date_no_year: 12/03
+
+例（期間＋時刻）
+
+date_no_year: 11/17
+time: 09:00
+end_date_no_year: 12/03
+end_time: 17:00
+
+- calendarStart/calendarEnd が "" の場合でも、detail には月日や時刻を自然文で書いてよい。ただし aiNotes の固定形式は必ず併記する。
 - calendarTitle: titleと同等か、少しだけ具体化（短く）
 - calendarDetails: detailの要点を短くまとめる（URLがあれば末尾に含めてもよい）
 - mapQuery: Placeの場合、店名 + 市区町村、または住所文字列
 - searchQuery: Productの場合、ブランド + 型番 + キーワード（例: "EcoRing オークション 保留 交渉" などでも可）
+- tel: 画像内に電話番号（TEL/電話/☎など）が明確にある場合のみ入れる（なければ ""）
+  - 表記がある場合はそのままの形式（ハイフン含む）で出力する
+  - 推測で作らない
 
 PRODUCTの記述ルール（超重要）
 - detail は「スクショから読める事実だけ」で構成する
@@ -70,11 +156,11 @@ PRODUCTの記述ルール（超重要）
 
 出力要件
 - JSONのみを返す（説明文は出さない）
-- categoryは "Event" | "Product" | "Task" | "Place" のいずれか
+- categoryは "Event" | "Product" | "Task" | "Place" | "News" のいずれか
 - titleは短く（UIの見出し）
 - detailは「次に何をすべきか」が分かるように、画像根拠に基づいて書く
 - aiNotes は "" を許容する（PRODUCT以外は基本 ""）
-- params はカテゴリに応じて必要項目だけ埋める（不要な項目は "" か省略ではなく ""）
+- params はカテゴリに応じて必要項目だけ埋める（不要な項目は ""。省略しない）
 
 PRODUCTのcalendarDetails出力フォーマット（UIにそのまま入れる）
 - 画像から読み取れた項目だけを、次の順で改行区切りで記述する
@@ -95,89 +181,91 @@ PRODUCTのcalendarDetails出力フォーマット（UIにそのまま入れる�
   - 候補は最大2〜3件までに制限する
   - 最後に「購入時は商品ページのモデル名や型番表記を確認してください」などの確認行動を添える
 
-
 出力要件（厳守）
 - JSONのみを返す（前後に説明文を付けない）
-- category は "Event" | "Product" | "Task" | "Place"
+- category は "Event" | "Product" | "Task" | "Place" | "News"
 - title は短く
 - detail は短く（1〜3文）。事実と推測を混ぜない
 - params.url は画像内にURL文字列が明確にある場合のみ
 `;
 
-  const responseSchema = {
-    type: Type.OBJECT,
+  // JSON Schema（PredictionResult / params.tel を含める）
+  const schema = {
+    type: "object",
+    additionalProperties: false,
     properties: {
       category: {
-        type: Type.STRING,
-        description:
-          "The category of the action (Event, Product, Task, Place, News)",
+        type: "string",
         enum: ["Event", "Product", "Task", "Place", "News"],
       },
-      title: {
-        type: Type.STRING,
-        description: "A short, descriptive title for the action",
-      },
-      detail: {
-        type: Type.STRING,
-        description:
-          "Detailed information about the detected item and suggested action",
-      },
-      aiNotes: {
-        type: Type.STRING,
-        description:
-          "Optional AI notes. Use ONLY as supplemental info, not facts from the image.",
-      },
+      title: { type: "string" },
+      detail: { type: "string" },
+      aiNotes: { type: "string" },
       params: {
-        type: Type.OBJECT,
+        type: "object",
+        additionalProperties: false,
         properties: {
-          searchQuery: {
-            type: Type.STRING,
-            description: "Keyword for Google Search",
-          },
-          calendarTitle: { type: Type.STRING },
-          calendarStart: {
-            type: Type.STRING,
-            description: "ISO 8601 formatted date/time string if available",
-          },
-          calendarEnd: { type: Type.STRING },
-          calendarLocation: { type: Type.STRING },
-          calendarDetails: { type: Type.STRING },
-          mapQuery: {
-            type: Type.STRING,
-            description: "Location name or address for Google Maps",
-          },
-          url: {
-            type: Type.STRING,
-            description: "Relevant URL found in image",
-          },
+          searchQuery: { type: "string" },
+          calendarTitle: { type: "string" },
+          calendarStart: { type: "string" },
+          calendarEnd: { type: "string" },
+          calendarLocation: { type: "string" },
+          calendarDetails: { type: "string" },
+          mapQuery: { type: "string" },
+          url: { type: "string" },
+          tel: { type: "string" },
         },
-        description: "Parameters extracted for specific tools",
+        required: [
+          "searchQuery",
+          "calendarTitle",
+          "calendarStart",
+          "calendarEnd",
+          "calendarLocation",
+          "calendarDetails",
+          "mapQuery",
+          "url",
+          "tel",
+        ],
       },
     },
     required: ["category", "title", "detail", "aiNotes", "params"],
-  };
+  } as const;
 
-  const [mimeType, base64Data] = base64Image.split(",");
-  const actualMimeType = mimeType.match(/:(.*?);/)?.[1] || "image/png";
+  // base64Image は dataURL ("data:image/png;base64,...") でもOK
+  // もし mime が付いてない生base64の可能性があるならここで補う
+  const imageUrl = base64Image.startsWith("data:")
+    ? base64Image
+    : `data:image/png;base64,${base64Image}`;
 
-  const result = await ai.models.generateContent({
+  const res = await client.responses.create({
     model,
-    contents: [
+    instructions: systemInstruction,
+    input: [
       {
-        parts: [
+        role: "user",
+        content: [
+          { type: "input_text", text: "画像内の事実だけで、指定スキーマのJSONを返してください。" },
           {
-            text: "画像内の事実だけを根拠に、最も実行しやすい1件のアクションをJSONで出力してください。不明項目は空文字にしてください。",
+            type: "input_image",
+            image_url: imageUrl,
+            // これが無いとあなたのエラー通り「detail必須」で型エラーになります
+            detail: "auto",
           },
-          { inlineData: { data: base64Data, mimeType: actualMimeType } },
         ],
       },
     ],
-    config: {
-      systemInstruction,
-      responseMimeType: "application/json",
-      responseSchema,
+    // Structured Outputs（JSON Schema strict）
+    text: {
+      format: {
+        type: "json_schema",
+        name: "action_extraction",
+        schema,
+        strict: true,
+      },
     },
   });
 
-  return JSON.parse(result.text || "{}");
+  // output_text にJSONが入る想定
+  const jsonText = res.output_text?.trim() || "{}";
+  return JSON.parse(jsonText);
 };

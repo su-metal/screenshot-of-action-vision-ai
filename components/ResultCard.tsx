@@ -23,6 +23,7 @@ const LABELS: Record<string, string> = {
   mapQuery: '地図検索（mapQuery）',
   searchQuery: '検索（searchQuery）',
   url: '関連URL',
+  tel: 'TEL',
 };
 
 
@@ -46,12 +47,91 @@ const fromDateTimeLocal = (v: string) => {
   return v.length === 16 ? `${v}:00` : v;
 };
 
+// aiNotes から固定フォーマットのヒントを拾う
+// 期待する形式（例）:
+// date_no_year: 12/04
+// time: 09:00
+// end_date_no_year: 12/03
+// end_time: 17:00
+const pickHint = (text: string, key: string) => {
+  const re = new RegExp(`^\\s*${key}\\s*:\\s*([^\\n\\r]+)\\s*$`, 'mi');
+  const m = text.match(re);
+  return m?.[1]?.trim() ?? '';
+};
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+const toISOFromNoYearHint = (year: number, mmdd: string, hhmm?: string) => {
+  // mmdd: "12/04" or "12-04"
+  const m = mmdd.match(/^(\d{1,2})[\/\-](\d{1,2})$/);
+  if (!m) return '';
+  const month = pad2(Number(m[1]));
+  const day = pad2(Number(m[2]));
+  const time = (hhmm && /^\d{2}:\d{2}$/.test(hhmm)) ? hhmm : '09:00';
+  // 秒つき（ResultCard内の datetime-local 変換が扱いやすい）
+  return `${year}-${month}-${day}T${time}:00`;
+};
+
+// result を editable に入れる前に「今年で補完」する
+const applyYearFallbackFromAiNotes = (r: PredictionResult): PredictionResult => {
+  const aiNotes = (r as any).aiNotes as string | undefined;
+  if (!aiNotes || typeof aiNotes !== 'string') return r;
+
+  const p = r.params ?? ({} as any);
+
+  // すでに calendarStart が入っているなら尊重（上書きしない）
+  if (p.calendarStart && String(p.calendarStart).trim()) return r;
+
+  const dateNoYear = pickHint(aiNotes, 'date_no_year');
+  if (!dateNoYear) return r;
+
+  const time = pickHint(aiNotes, 'time');
+  const endDateNoYear = pickHint(aiNotes, 'end_date_no_year');
+  const endTime = pickHint(aiNotes, 'end_time');
+
+  const now = new Date();
+  const baseYear = now.getFullYear();
+
+  // date_no_year を今年に当てはめた日付が「今日より前」なら翌年
+  let year = baseYear;
+  const m = dateNoYear.match(/^(\d{1,2})[\/\-](\d{1,2})$/);
+  if (m) {
+    const month = Number(m[1]);
+    const day = Number(m[2]);
+
+    const today = new Date(baseYear, now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const candidate = new Date(baseYear, month - 1, day, 0, 0, 0, 0);
+
+    if (candidate.getTime() < today.getTime()) {
+      year = baseYear + 1;
+    }
+  }
+
+  const calendarStart = toISOFromNoYearHint(year, dateNoYear, time);
+
+  const calendarEnd =
+    (p.calendarEnd && String(p.calendarEnd).trim())
+      ? p.calendarEnd
+      : (endDateNoYear ? toISOFromNoYearHint(year, endDateNoYear, endTime) : p.calendarEnd);
+
+  return {
+    ...r,
+    params: {
+      ...p,
+      calendarStart: calendarStart || p.calendarStart || "",
+      calendarEnd: calendarEnd || p.calendarEnd || "",
+    },
+  };
+
+};
+
+
 export const ResultCard: React.FC<ResultCardProps> = ({ result }) => {
   const [editable, setEditable] = React.useState<PredictionResult>(result);
 
-  // result が切り替わった時に編集状態も同期
+  // result が切り替わった時に編集状態も同期（年なし日付は今年で補完）
   React.useEffect(() => {
-    setEditable(result);
+    setEditable(applyYearFallbackFromAiNotes(result));
   }, [result]);
 
   const getCategoryColor = (cat: ActionCategory) => {
@@ -85,6 +165,7 @@ export const ResultCard: React.FC<ResultCardProps> = ({ result }) => {
     'calendarStart',
     'calendarEnd',
     'calendarLocation',
+    'tel',
     'calendarDetails',
     'mapQuery',
     'searchQuery',
@@ -99,7 +180,7 @@ export const ResultCard: React.FC<ResultCardProps> = ({ result }) => {
       p.calendarTitle || p.calendarStart || p.calendarEnd || p.calendarLocation || p.calendarDetails;
 
     if (editable.category === ActionCategory.Event || hasEventCore) {
-      return ['calendarTitle', 'calendarStart', 'calendarEnd', 'calendarLocation', 'calendarDetails', 'mapQuery', 'searchQuery', 'url'] as (keyof Params)[];
+      return ['calendarTitle', 'calendarStart', 'calendarEnd', 'calendarLocation', 'tel', 'calendarDetails', 'mapQuery', 'url'] as (keyof Params)[];
     }
 
     if (editable.category === ActionCategory.Place) {

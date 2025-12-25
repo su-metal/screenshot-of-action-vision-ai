@@ -15,6 +15,7 @@ export interface ActionParams {
   calendarDetails?: string;
   mapQuery?: string;
   url?: string;
+  tel: string; 
 }
 
 export interface PredictionResult {
