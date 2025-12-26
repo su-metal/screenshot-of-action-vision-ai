@@ -14,6 +14,14 @@ export interface ActionParams {
   calendarLocation?: string;
   calendarDetails?: string;
   mapQuery?: string;
+  productBrand?: string;
+  productModel?: string;
+  productPrice?: string;
+  productCurrency?: string;
+  productAvailability?: string;
+  productShippingEta?: string;
+  productSeller?: string;
+  productKeySpecs?: string;
   url?: string;
   tel: string; 
 }
