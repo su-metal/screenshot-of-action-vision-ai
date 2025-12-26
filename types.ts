@@ -1,9 +1,9 @@
-
 export enum ActionCategory {
-  Event = 'Event',
-  Product = 'Product',
-  Task = 'Task',
-  Place = 'Place'
+  Event = "Event",
+  Product = "Product",
+  Task = "Task",
+  Place = "Place",
+  News = "News",
 }
 
 export interface ActionParams {
@@ -14,7 +14,16 @@ export interface ActionParams {
   calendarLocation?: string;
   calendarDetails?: string;
   mapQuery?: string;
+  productBrand?: string;
+  productModel?: string;
+  productPrice?: string;
+  productCurrency?: string;
+  productAvailability?: string;
+  productShippingEta?: string;
+  productSeller?: string;
+  productKeySpecs?: string;
   url?: string;
+  tel: string; 
 }
 
 export interface PredictionResult {

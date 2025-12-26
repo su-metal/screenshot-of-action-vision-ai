@@ -2,7 +2,7 @@
 import React from 'react';
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger' | 'line';
+  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger' | 'line' | 'gcal' | 'gmap' | 'link' | 'search';
   size?: 'sm' | 'md' | 'lg';
   isLoading?: boolean;
 }
@@ -23,7 +23,10 @@ export const Button: React.FC<ButtonProps> = ({
     outline: "bg-transparent text-indigo-600 border-2 border-indigo-600 hover:bg-indigo-50 focus:ring-indigo-500",
     ghost: "bg-transparent text-gray-600 hover:bg-gray-100 focus:ring-gray-200",
     danger: "bg-red-600 text-white hover:bg-red-700 focus:ring-red-500",
-    line: "bg-[#06C755] text-white hover:bg-[#05b34c] focus:ring-[#06C755] shadow-md hover:shadow-lg"
+    gcal: "bg-[#4285F4] text-white hover:bg-[#2b6fe3] focus:ring-[#4285F4] shadow-md hover:shadow-lg",
+    gmap: "bg-[#EA4335] text-white hover:bg-[#d53b2f] focus:ring-[#EA4335] shadow-md hover:shadow-lg",
+    line: "bg-[#06C755] text-white hover:bg-[#05b34c] focus:ring-[#06C755] shadow-md hover:shadow-lg",
+    search: "bg-gray-50 text-indigo-700 hover:bg-gray-100 focus:ring-indigo-300 border border-indigo-300 shadow-sm",
   };
 
   const sizes = {
